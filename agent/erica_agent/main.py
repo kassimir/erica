@@ -11,8 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from erica_agent.context import build_request_context
-from erica_agent.memory_long import long_term
-from erica_agent.memory_short import short_term
+from erica_agent.memory import long_term, short_term
 from erica_agent.models import (
     EricaMode,
     ExecuteRequest,
@@ -24,7 +23,7 @@ from erica_agent.models import (
 )
 from erica_agent.persona import persona_state
 from erica_agent.planner import intent_from_text, plan_from_text
-from erica_agent.skills_registry import registry
+from erica_agent.registry import registry
 from erica_agent.workflows import engine as workflow_engine
 
 logging.basicConfig(level=logging.INFO)

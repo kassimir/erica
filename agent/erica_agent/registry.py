@@ -1,3 +1,5 @@
+"""Skill registry: YAML manifest discovery, validation, and handler dispatch."""
+
 from __future__ import annotations
 
 import importlib

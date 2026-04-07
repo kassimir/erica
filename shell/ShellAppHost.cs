@@ -18,6 +18,7 @@ public static class ShellAppHost
     private static CommandRouter? _router;
 
     public static ShellLogger Log => _log ?? throw new InvalidOperationException("ShellAppHost not initialized.");
+    public static AgentClient Agent => _agent ?? throw new InvalidOperationException("ShellAppHost not initialized.");
     public static CommandRouter Router => _router ?? throw new InvalidOperationException("ShellAppHost not initialized.");
     public static VoiceInputHandler Voice => _voice ?? throw new InvalidOperationException("ShellAppHost not initialized.");
     public static EriCAShellSection Settings => _settings ?? throw new InvalidOperationException("ShellAppHost not initialized.");

@@ -1,9 +1,13 @@
+using System;
+using System.Threading.Tasks;
 using Erica.Shell.Services;
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.System;
 using WinRT.Interop;
 
@@ -11,8 +15,12 @@ namespace Erica.Shell;
 
 public sealed partial class MainWindow : Window
 {
-    private bool _quakeVisible;
+    private const double QuakeHeight = 280;
+
     private bool _paletteVisible;
+    private bool _quakeOpen;
+    private bool _quakeAnimating;
+    private DispatcherQueueTimer? _healthTimer;
 
     public MainWindow()
     {
@@ -24,6 +32,8 @@ public sealed partial class MainWindow : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+
+        Loaded += MainWindow_Loaded;
 
         var paletteAccel = new KeyboardAccelerator
         {
@@ -57,8 +67,9 @@ public sealed partial class MainWindow : Window
         voiceAccel.Invoked += async (_, e) =>
         {
             e.Handled = true;
+            StatusActivity.Text = "Voice: placeholder (wire capture + /voice/stt)";
             await ShellAppHost.Voice.TranscribePlaceholderAsync();
-            StatusLeft.Text = "Voice: see status / logs";
+            ShellAppHost.Log.Information("Push-to-talk: stub");
         };
         RootGrid.KeyboardAccelerators.Add(voiceAccel);
 
@@ -66,10 +77,65 @@ public sealed partial class MainWindow : Window
         sendAccel.Invoked += async (_, e) =>
         {
             e.Handled = true;
-            if (_quakeVisible)
+            if (_quakeOpen)
                 await QuakeSendAsync();
         };
         RootGrid.KeyboardAccelerators.Add(sendAccel);
+    }
+
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        _ = RefreshHealthAsync();
+        var dq = DispatcherQueue.GetForCurrentThread();
+        _healthTimer = dq.CreateTimer();
+        _healthTimer.Interval = TimeSpan.FromSeconds(20);
+        _healthTimer.Tick += (_, _) => _ = RefreshHealthAsync();
+        _healthTimer.Start();
+    }
+
+    private async Task RefreshHealthAsync()
+    {
+        try
+        {
+            var h = await ShellAppHost.Agent.GetHealthAsync();
+            if (h == null)
+            {
+                StatusConnection.Text = "Agent: offline";
+                StatusMode.Text = "Mode: —";
+                return;
+            }
+
+            if (h.Ok)
+            {
+                var authority = AgentAuthority(ShellAppHost.Settings.AgentBaseUrl);
+                StatusConnection.Text = $"Agent: online · {authority}";
+                StatusMode.Text = string.IsNullOrWhiteSpace(h.Mode) ? "Mode: —" : $"Mode: {h.Mode}";
+            }
+            else
+            {
+                StatusConnection.Text = "Agent: unreachable";
+                StatusMode.Text = "Mode: —";
+            }
+        }
+        catch (Exception ex)
+        {
+            ShellAppHost.Log.Warning($"Health refresh: {ex.Message}");
+            StatusConnection.Text = "Agent: offline";
+            StatusMode.Text = "Mode: —";
+        }
+    }
+
+    private static string AgentAuthority(string baseUrl)
+    {
+        try
+        {
+            var u = new Uri(baseUrl.Trim());
+            return u.Authority;
+        }
+        catch
+        {
+            return baseUrl;
+        }
     }
 
     private void TogglePalette()
@@ -79,27 +145,54 @@ public sealed partial class MainWindow : Window
         if (_paletteVisible)
         {
             PaletteInput.Focus(FocusState.Programmatic);
-            StatusLeft.Text = "Command palette";
+            StatusActivity.Text = "Command palette";
         }
         else
         {
-            StatusLeft.Text = "Ready";
+            StatusActivity.Text = "";
         }
     }
 
     private void ToggleQuake()
     {
-        _quakeVisible = !_quakeVisible;
-        QuakeRow.Height = _quakeVisible ? new GridLength(280) : new GridLength(0);
-        if (_quakeVisible)
+        if (_quakeAnimating)
+            return;
+        _quakeOpen = !_quakeOpen;
+        AnimateQuakeSlide(_quakeOpen);
+    }
+
+    private void AnimateQuakeSlide(bool open)
+    {
+        _quakeAnimating = true;
+        var from = QuakeTransform.TranslateY;
+        var to = open ? 0 : -QuakeHeight;
+        var anim = new DoubleAnimation
         {
-            QuakeInput.Focus(FocusState.Programmatic);
-            StatusLeft.Text = "Console";
-        }
-        else
+            From = from,
+            To = to,
+            Duration = new Duration(TimeSpan.FromMilliseconds(220)),
+            EnableDependentAnimation = true,
+        };
+        Storyboard.SetTarget(anim, QuakeTransform);
+        Storyboard.SetTargetProperty(anim, "TranslateY");
+        var sb = new Storyboard();
+        sb.Children.Add(anim);
+        sb.Completed += (_, _) =>
         {
-            StatusLeft.Text = "Ready";
-        }
+            _quakeAnimating = false;
+            QuakeSlide.IsHitTestVisible = open;
+            QuakeTransform.TranslateY = to;
+            if (open)
+            {
+                QuakeInput.Focus(FocusState.Programmatic);
+                StatusActivity.Text = "Console (stream)";
+            }
+            else
+            {
+                StatusActivity.Text = "";
+            }
+        };
+        sb.Begin();
     }
 
     private async void PaletteInput_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -128,17 +221,18 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            StatusLeft.Text = "Sending…";
+            StatusActivity.Text = "POST /execute…";
             var result = await ShellAppHost.Router.RouteAsync(text, streamToAgent: false);
             var tag = result.Target == CommandTarget.CopilotChat ? "copilot" : "agent";
             if (!string.IsNullOrEmpty(result.Output))
                 QuakeOutput.Text += $"[{tag}]\n{result.Output}\n";
-            StatusLeft.Text = "OK";
+            StatusActivity.Text = "Done";
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
             ShellAppHost.Log.Error("Palette command failed", ex);
-            StatusLeft.Text = "Error";
+            StatusActivity.Text = $"Error: {ex.Message}";
             QuakeOutput.Text += ex.Message + "\n";
         }
     }
@@ -161,16 +255,17 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            StatusLeft.Text = "Streaming…";
+            StatusActivity.Text = "POST /execute/stream…";
             var result = await ShellAppHost.Router.RouteAsync(text, streamToAgent: true);
             QuakeOutput.Text += result.Output + "\n";
-            StatusLeft.Text = "Done";
+            StatusActivity.Text = "Done";
+            await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
             ShellAppHost.Log.Error("Quake stream failed", ex);
             QuakeOutput.Text += ex.Message + "\n";
-            StatusLeft.Text = "Error";
+            StatusActivity.Text = $"Error: {ex.Message}";
         }
     }
 }

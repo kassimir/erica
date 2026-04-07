@@ -1,8 +1,16 @@
 # Erica Shell (WinUI 3)
 
-Full-screen WinUI 3 host for EriCA: command palette (`Ctrl+Space`), Quake console (`Ctrl+``), status bar, and routing to the local agent and optional Copilot-compatible API.
+Implements the **shell layer** from [`../ERICA_ARCHITECTURE.md`](../ERICA_ARCHITECTURE.md): chromeless full-screen host, **no embedded LLM** (thin HTTP client to the agent), command palette, Quake console, status bar (connection + persona mode), and configurable agent base URL.
 
-## Architecture (initial)
+| Architecture requirement | Implementation |
+|-------------------------|----------------|
+| Borderless / full-screen | `AppWindowPresenterKind.FullScreen`, dark `RequestedTheme` |
+| Command palette `Ctrl+Space` | `PaletteOverlay` → `CommandRouter` → agent `POST /execute` |
+| Quake `Ctrl+`` | Top overlay, `CompositeTransform.TranslateY` slide animation, stream via `/execute/stream` |
+| Status bar | `Agent: online/offline`, `Mode:` from `GET /health`, activity line, shortcut hint |
+| Configuration | [`appsettings.json`](appsettings.json) `EriCAShell.AgentBaseUrl` |
+
+## Architecture (code layout)
 
 | Piece | Role |
 |--------|------|

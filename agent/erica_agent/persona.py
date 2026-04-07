@@ -42,12 +42,15 @@ class PersonaState:
             name = self._data.get("name", "Erica")
             tone = self._data.get("tone", "")
             constraints = self._data.get("constraints", [])
+            examples = self._data.get("example_responses", [])
             cstr = "\n".join(f"- {c}" for c in constraints) if constraints else ""
+            ex = "\n".join(f"- {e}" for e in examples) if examples else ""
             return (
                 f"Persona: {name}\n"
                 f"Tone: {tone}\n"
                 f"Active mode: {self._mode.value}\n"
                 f"Constraints:\n{cstr}\n"
+                f"Example response style:\n{ex}\n"
             )
 
 

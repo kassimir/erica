@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from erica_agent.memory_long import long_term
-from erica_agent.memory_short import short_term
+from erica_agent.memory import long_term, short_term
 from erica_agent.persona import persona_state
 
 

@@ -21,6 +21,27 @@ public sealed class AgentClient
 
     public string BaseUrl => _settings.AgentBaseUrl.TrimEnd('/');
 
+    /// <summary>GET /health — agent reachability and active persona mode.</summary>
+    public async Task<AgentHealthResult?> GetHealthAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"{BaseUrl}/health";
+            var res = await _http.GetAsync(url, cancellationToken);
+            var json = await res.Content.ReadAsStringAsync(cancellationToken);
+            if (!res.IsSuccessStatusCode)
+                return new AgentHealthResult { Ok = false, Mode = null };
+            return JsonSerializer.Deserialize<AgentHealthResult>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Health check failed: {ex.Message}");
+            return null;
+        }
+    }
+
     public async Task<string> ExecuteAsync(string text, CancellationToken cancellationToken = default)
     {
         var url = $"{BaseUrl}/execute";
@@ -68,4 +89,10 @@ public sealed class AgentClient
         public string? Text { get; set; }
         public bool Done { get; set; }
     }
+}
+
+public sealed class AgentHealthResult
+{
+    public bool Ok { get; set; }
+    public string? Mode { get; set; }
 }
