@@ -11,6 +11,8 @@ public sealed class ShellSettingsRoot
 public sealed class EriCAShellSection
 {
     public string AgentBaseUrl { get; init; } = "http://127.0.0.1:8742";
+    /// <summary><c>FullScreen</c> (default) or <c>Windowed</c> for dev/debug with custom chrome strip.</summary>
+    public string WindowMode { get; init; } = "FullScreen";
     public CopilotSection Copilot { get; init; } = new();
     public LoggingSection Logging { get; init; } = new();
 }

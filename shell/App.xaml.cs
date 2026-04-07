@@ -1,3 +1,4 @@
+using Erica.Shell.Config;
 using Microsoft.UI.Xaml;
 
 namespace Erica.Shell;
@@ -13,7 +14,8 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        ShellAppHost.Initialize();
+        var startup = ShellStartupOptions.Parse(Environment.GetCommandLineArgs());
+        ShellAppHost.Initialize(startup);
         _window = new MainWindow();
         _window.Activate();
     }

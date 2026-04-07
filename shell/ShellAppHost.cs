@@ -23,14 +23,14 @@ public static class ShellAppHost
     public static VoiceInputHandler Voice => _voice ?? throw new InvalidOperationException("ShellAppHost not initialized.");
     public static EriCAShellSection Settings => _settings ?? throw new InvalidOperationException("ShellAppHost not initialized.");
 
-    public static void Initialize()
+    public static void Initialize(ShellStartupOptions? startup = null)
     {
         if (_initialized)
             return;
 
-        _settings = ShellConfiguration.Load();
+        _settings = ShellConfiguration.Load(startup: startup);
         _log = new ShellLogger(_settings.Logging.MinimumLevel);
-        _log.Information("EriCA Shell starting.");
+        _log.Information($"EriCA Shell starting. Agent: {_settings.AgentBaseUrl}");
 
         _agent = new AgentClient(_settings, _log);
         _copilot = new CopilotApiClient(_settings, _log);

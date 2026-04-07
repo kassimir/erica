@@ -38,7 +38,8 @@ public sealed class CommandRouter
     public async Task<RoutedCommandResult> RouteAsync(
         string text,
         bool streamToAgent,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<string>? streamChunk = null)
     {
         var t = text.Trim();
         if (t.StartsWith("voice:", StringComparison.OrdinalIgnoreCase))
@@ -69,6 +70,12 @@ public sealed class CommandRouter
         if (streamToAgent)
         {
             _log.Information("Route: agent stream");
+            if (streamChunk != null)
+            {
+                await _agent.ExecuteStreamAsync(t, streamChunk, cancellationToken);
+                return new RoutedCommandResult { Target = CommandTarget.AgentStream, Output = "" };
+            }
+
             var body = await _agent.ExecuteStreamAsync(t, cancellationToken);
             return new RoutedCommandResult { Target = CommandTarget.AgentStream, Output = body };
         }

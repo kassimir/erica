@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
+using Windows.Graphics;
 using Windows.System;
 using WinRT.Interop;
 
@@ -21,19 +22,22 @@ public sealed partial class MainWindow : Window
     private bool _quakeOpen;
     private bool _quakeAnimating;
     private DispatcherQueueTimer? _healthTimer;
+    private GlobalHotkeyService? _hotkeys;
+    private readonly DispatcherQueue _dq;
 
     public MainWindow()
     {
+        _dq = DispatcherQueue.GetForCurrentThread();
         InitializeComponent();
         Title = "Erica";
         ExtendsContentIntoTitleBar = true;
 
+        ApplyWindowPresenter();
+
         var hwnd = WindowNative.GetWindowHandle(this);
-        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
 
         Loaded += MainWindow_Loaded;
+        Closed += MainWindow_Closed;
 
         var paletteAccel = new KeyboardAccelerator
         {
@@ -67,9 +71,7 @@ public sealed partial class MainWindow : Window
         voiceAccel.Invoked += async (_, e) =>
         {
             e.Handled = true;
-            StatusActivity.Text = "Voice: placeholder (wire capture + /voice/stt)";
-            await ShellAppHost.Voice.TranscribePlaceholderAsync();
-            ShellAppHost.Log.Information("Push-to-talk: stub");
+            await VoiceHotkeyAsync();
         };
         RootGrid.KeyboardAccelerators.Add(voiceAccel);
 
@@ -81,13 +83,79 @@ public sealed partial class MainWindow : Window
                 await QuakeSendAsync();
         };
         RootGrid.KeyboardAccelerators.Add(sendAccel);
+
+        try
+        {
+            _hotkeys = new GlobalHotkeyService(hwnd, _dq, OnGlobalHotkey);
+        }
+        catch (Exception ex)
+        {
+            ShellAppHost.Log.Warning($"Global hotkeys unavailable (use in-window shortcuts): {ex.Message}");
+        }
+    }
+
+    private void ApplyWindowPresenter()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var appWindow = AppWindow.GetFromWindowId(windowId);
+        var mode = ShellAppHost.Settings.WindowMode?.Trim() ?? "FullScreen";
+
+        if (string.Equals(mode, "Windowed", StringComparison.OrdinalIgnoreCase))
+        {
+            appWindow.SetPresenter(AppWindowPresenterKind.Default);
+            if (appWindow.Presenter is OverlappedPresenter op)
+                op.SetBorderAndTitleBar(false, false);
+            appWindow.Resize(new SizeInt32(1400, 900));
+            ChromeRowDefinition.Height = new GridLength(32);
+            WindowChromeBar.Visibility = Visibility.Visible;
+            ExtendsContentIntoTitleBar = true;
+            SetTitleBar(TitleBarDragRegion);
+        }
+        else
+        {
+            appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+        }
+    }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        _hotkeys?.Dispose();
+        _hotkeys = null;
+    }
+
+    private void ExitWindowChrome_Click(object sender, RoutedEventArgs e)
+    {
+        Application.Current.Exit();
+    }
+
+    private void OnGlobalHotkey(int id)
+    {
+        switch (id)
+        {
+            case GlobalHotkeyService.IdPalette:
+                TogglePalette();
+                break;
+            case GlobalHotkeyService.IdQuake:
+                ToggleQuake();
+                break;
+            case GlobalHotkeyService.IdVoice:
+                _ = VoiceHotkeyAsync();
+                break;
+        }
+    }
+
+    private async Task VoiceHotkeyAsync()
+    {
+        StatusActivity.Text = "Voice: placeholder (wire capture + /voice/stt)";
+        await ShellAppHost.Voice.TranscribePlaceholderAsync();
+        ShellAppHost.Log.Information("Push-to-talk: stub");
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         _ = RefreshHealthAsync();
-        var dq = DispatcherQueue.GetForCurrentThread();
-        _healthTimer = dq.CreateTimer();
+        _healthTimer = _dq.CreateTimer();
         _healthTimer.Interval = TimeSpan.FromSeconds(20);
         _healthTimer.Tick += (_, _) => _ = RefreshHealthAsync();
         _healthTimer.Start();
@@ -102,6 +170,7 @@ public sealed partial class MainWindow : Window
             {
                 StatusConnection.Text = "Agent: offline";
                 StatusMode.Text = "Mode: —";
+                SetError("Reconnecting… check agent or URL.");
                 return;
             }
 
@@ -110,11 +179,13 @@ public sealed partial class MainWindow : Window
                 var authority = AgentAuthority(ShellAppHost.Settings.AgentBaseUrl);
                 StatusConnection.Text = $"Agent: online · {authority}";
                 StatusMode.Text = string.IsNullOrWhiteSpace(h.Mode) ? "Mode: —" : $"Mode: {h.Mode}";
+                ClearError();
             }
             else
             {
                 StatusConnection.Text = "Agent: unreachable";
                 StatusMode.Text = "Mode: —";
+                SetError("HTTP error from /health.");
             }
         }
         catch (Exception ex)
@@ -122,6 +193,7 @@ public sealed partial class MainWindow : Window
             ShellAppHost.Log.Warning($"Health refresh: {ex.Message}");
             StatusConnection.Text = "Agent: offline";
             StatusMode.Text = "Mode: —";
+            SetError(ex.Message);
         }
     }
 
@@ -136,6 +208,16 @@ public sealed partial class MainWindow : Window
         {
             return baseUrl;
         }
+    }
+
+    private void SetError(string message)
+    {
+        StatusError.Text = message;
+    }
+
+    private void ClearError()
+    {
+        StatusError.Text = "";
     }
 
     private void TogglePalette()
@@ -221,6 +303,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            ClearError();
             StatusActivity.Text = "POST /execute…";
             var result = await ShellAppHost.Router.RouteAsync(text, streamToAgent: false);
             var tag = result.Target == CommandTarget.CopilotChat ? "copilot" : "agent";
@@ -232,6 +315,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             ShellAppHost.Log.Error("Palette command failed", ex);
+            SetError(ex.Message);
             StatusActivity.Text = $"Error: {ex.Message}";
             QuakeOutput.Text += ex.Message + "\n";
         }
@@ -255,15 +339,33 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            ClearError();
             StatusActivity.Text = "POST /execute/stream…";
-            var result = await ShellAppHost.Router.RouteAsync(text, streamToAgent: true);
-            QuakeOutput.Text += result.Output + "\n";
+            var progress = new Progress<string>(line =>
+            {
+                _dq.TryEnqueue(() =>
+                {
+                    QuakeOutput.Text += line + "\n";
+                    QuakeScrollViewer.ChangeView(null, float.MaxValue, null);
+                });
+            });
+            var result = await ShellAppHost.Router.RouteAsync(text, streamToAgent: true, streamChunk: progress);
+            if (!string.IsNullOrEmpty(result.Output))
+            {
+                _dq.TryEnqueue(() =>
+                {
+                    QuakeOutput.Text += result.Output + "\n";
+                    QuakeScrollViewer.ChangeView(null, float.MaxValue, null);
+                });
+            }
+
             StatusActivity.Text = "Done";
             await RefreshHealthAsync();
         }
         catch (Exception ex)
         {
             ShellAppHost.Log.Error("Quake stream failed", ex);
+            SetError(ex.Message);
             QuakeOutput.Text += ex.Message + "\n";
             StatusActivity.Text = $"Error: {ex.Message}";
         }

@@ -7,12 +7,43 @@
 
     <Grid x:Name="RootGrid" Background="#FF0D0D0D">
         <Grid.RowDefinitions>
+            <RowDefinition x:Name="ChromeRowDefinition" Height="0" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Main chromeless content (LLM runs in agent, not here) -->
-        <Grid Grid.Row="0" Background="#FF0D0D0D">
+        <!-- Optional top strip for Windowed mode: drag + exit -->
+        <Border
+            x:Name="WindowChromeBar"
+            Grid.Row="0"
+            Height="32"
+            VerticalAlignment="Top"
+            Background="#FF141414"
+            BorderBrush="#FF2A2A2A"
+            BorderThickness="0,0,0,1"
+            Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border
+                    x:Name="TitleBarDragRegion"
+                    Background="Transparent"
+                    HorizontalAlignment="Stretch" />
+                <Button
+                    x:Name="ExitWindowChromeButton"
+                    Grid.Column="1"
+                    Margin="0,0,8,0"
+                    Padding="12,4"
+                    Click="ExitWindowChrome_Click"
+                    Content="Exit"
+                    FontSize="12" />
+            </Grid>
+        </Border>
+
+        <!-- Main chromeless content -->
+        <Grid Grid.Row="1" Background="#FF0D0D0D">
             <TextBlock
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
@@ -22,10 +53,10 @@
                 Text="Erica" />
         </Grid>
 
-        <!-- Quake-style console: top-anchored, slides down (see MainWindow.xaml.cs) -->
+        <!-- Quake-style console -->
         <Border
             x:Name="QuakeSlide"
-            Grid.Row="0"
+            Grid.Row="1"
             Height="280"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Top"
@@ -42,7 +73,11 @@
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer
+                    x:Name="QuakeScrollViewer"
+                    Grid.Row="0"
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
                     <TextBlock
                         x:Name="QuakeOutput"
                         Foreground="#FFE8E8E8"
@@ -71,15 +106,16 @@
             </Grid>
         </Border>
 
-        <!-- Status: connection state, persona mode, activity, shortcuts (ERICA_ARCHITECTURE.md § Shell layer) -->
+        <!-- Status bar -->
         <Border
-            Grid.Row="1"
+            Grid.Row="2"
             Background="#FF111111"
             BorderBrush="#FF222222"
             BorderThickness="0,1,0,0"
             Padding="12,8">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -98,8 +134,17 @@
                     Foreground="#FF8AB4D8"
                     Text="Mode: —" />
                 <TextBlock
-                    x:Name="StatusActivity"
+                    x:Name="StatusError"
                     Grid.Column="2"
+                    Margin="16,0,0,0"
+                    MaxWidth="360"
+                    VerticalAlignment="Center"
+                    Foreground="#FFFF6B6B"
+                    Text=""
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    x:Name="StatusActivity"
+                    Grid.Column="3"
                     Margin="16,0,16,0"
                     VerticalAlignment="Center"
                     Foreground="#FF6A6A6A"
@@ -107,7 +152,7 @@
                     Text="" />
                 <TextBlock
                     x:Name="StatusRight"
-                    Grid.Column="3"
+                    Grid.Column="4"
                     VerticalAlignment="Center"
                     Foreground="#FF5A5A5A"
                     FontSize="11"
@@ -118,7 +163,7 @@
         <!-- Command palette overlay -->
         <Border
             x:Name="PaletteOverlay"
-            Grid.RowSpan="2"
+            Grid.RowSpan="3"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
             Background="#CC000000"
