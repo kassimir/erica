@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# .NET / WinUI
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+TestResults/
+
+# Erica runtime data (keep folder)
+data/*.sqlite3
+data/*.db
+!data/.gitkeep
+
+# IDE
+.idea/
+*.swp

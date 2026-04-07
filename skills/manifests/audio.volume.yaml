@@ -1,0 +1,11 @@
+name: audio.volume
+description: Set master volume percentage (0-100).
+entrypoint: skills.audio_skill:set_volume
+parameters:
+  - name: percent
+    type: integer
+    required: true
+permissions:
+  - audio.volume
+examples:
+  - set volume to 30

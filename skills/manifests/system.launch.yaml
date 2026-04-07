@@ -1,0 +1,13 @@
+name: system.launch
+description: Launch an application by name or path.
+entrypoint: skills.system:launch
+parameters:
+  - name: target
+    type: string
+    required: true
+    description: Executable name or path
+permissions:
+  - process.launch
+examples:
+  - launch notepad
+  - open calc

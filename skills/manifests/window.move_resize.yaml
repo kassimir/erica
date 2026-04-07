@@ -1,0 +1,22 @@
+name: window.move_resize
+description: Move and resize a window matched by title substring.
+entrypoint: skills.window_skill:move_resize
+parameters:
+  - name: title_substr
+    type: string
+    required: true
+  - name: x
+    type: integer
+    required: true
+  - name: y
+    type: integer
+    required: true
+  - name: width
+    type: integer
+    required: true
+  - name: height
+    type: integer
+    required: true
+permissions:
+  - window.manage
+examples: []

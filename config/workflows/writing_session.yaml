@@ -1,0 +1,15 @@
+id: writing_session
+name: Writing session
+description: Sample workflow for focused writing.
+steps:
+  - skill: persona.set_mode
+    arguments:
+      mode: WriterMode
+  - skill: audio.volume
+    arguments:
+      percent: 35
+triggers:
+  command: start writing session
+required_skills:
+  - persona.set_mode
+  - audio.volume

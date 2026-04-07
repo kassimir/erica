@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EricaSkillManifest",
+  "type": "object",
+  "required": ["name", "entrypoint"],
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^[^:]+:[^:]+$"
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "required": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "examples": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

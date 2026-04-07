@@ -1,0 +1,10 @@
+name: audio.device
+description: Switch default audio playback device by name substring.
+entrypoint: skills.audio_skill:switch_audio_device
+parameters:
+  - name: device_name
+    type: string
+    required: true
+permissions:
+  - audio.device
+examples: []

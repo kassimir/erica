@@ -1,0 +1,11 @@
+name: network.wifi_toggle
+description: Enable or disable Wi-Fi radio.
+entrypoint: skills.network_skill:wifi_toggle
+parameters:
+  - name: enable
+    type: boolean
+    required: true
+permissions:
+  - network.wifi
+examples:
+  - turn wifi off

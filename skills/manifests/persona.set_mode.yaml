@@ -1,0 +1,13 @@
+name: persona.set_mode
+description: Switch Erica persona mode (Writer, Operator, Quiet).
+entrypoint: skills.persona_skill:set_mode
+parameters:
+  - name: mode
+    type: string
+    required: true
+    description: One of WriterMode, OperatorMode, QuietMode
+permissions:
+  - persona
+examples:
+  - "Erica, writer mode"
+  - "Erica, go quiet"
