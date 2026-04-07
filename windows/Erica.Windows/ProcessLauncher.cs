@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Erica.Windows;
 
@@ -55,5 +57,45 @@ public static class ProcessLauncher
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Start without shell resolution (no file association / URL handling). Uses kernel32 CreateProcessW.
+    /// </summary>
+    public static bool TryStartWithCreateProcess(string fileName, string? arguments, string? workingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+
+        var cmd = new StringBuilder(fileName.Length + (arguments?.Length ?? 0) + 4);
+        cmd.Append('"').Append(fileName.Trim()).Append('"');
+        if (!string.IsNullOrEmpty(arguments))
+        {
+            cmd.Append(' ').Append(arguments);
+        }
+
+        var si = new NativeMethods.STARTUPINFOW
+        {
+            cb = Marshal.SizeOf<NativeMethods.STARTUPINFOW>(),
+        };
+
+        if (!NativeMethods.CreateProcessW(
+                null,
+                cmd,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                0,
+                IntPtr.Zero,
+                string.IsNullOrEmpty(workingDirectory) ? null : workingDirectory,
+                ref si,
+                out var pi))
+        {
+            return false;
+        }
+
+        NativeMethods.CloseHandle(pi.hProcess);
+        NativeMethods.CloseHandle(pi.hThread);
+        return true;
     }
 }

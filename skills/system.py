@@ -30,15 +30,17 @@ def _cli_json(cmd: str, payload: dict) -> dict:
 
 def launch(target: str) -> dict:
     data = _cli_json("launch", {"target": target})
-    if data:
-        return data
+    if data and data.get("ok"):
+        return {**data, "target": target}
+    data_cp = _cli_json("launch", {"target": target, "useCreateProcess": True})
+    if data_cp and data_cp.get("ok"):
+        return {**data_cp, "target": target}
     if os.name != "nt":
         subprocess.Popen([target])
-        return {"ok": True, "method": "direct"}
-    # Windows: try start command
+        return {"ok": True, "method": "direct", "target": target}
     exe = shutil.which(target)
     if exe:
         subprocess.Popen([exe], cwd=str(Path(exe).parent))
-        return {"ok": True, "path": exe}
+        return {"ok": True, "path": exe, "method": "which", "target": target}
     subprocess.Popen(f'start "" {target}', shell=True)
-    return {"ok": True, "method": "start"}
+    return {"ok": True, "method": "start", "target": target}

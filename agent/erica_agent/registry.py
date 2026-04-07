@@ -3,16 +3,35 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
+import jsonschema
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from erica_agent.config import settings
 
 log = logging.getLogger(__name__)
+
+
+@lru_cache
+def _skill_manifest_schema() -> dict[str, Any]:
+    path = settings.skills_path / "schema" / "skill_manifest.schema.json"
+    if not path.is_file():
+        log.warning("Skill manifest JSON schema missing: %s", path)
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _validate_manifest_jsonschema(raw: dict[str, Any], path: Path) -> None:
+    schema = _skill_manifest_schema()
+    if not schema:
+        return
+    jsonschema.validate(instance=raw, schema=schema)
 
 
 class ParameterSpec(BaseModel):
@@ -55,6 +74,7 @@ class SkillRegistry:
                 continue
             try:
                 raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                _validate_manifest_jsonschema(raw, path)
                 m = SkillManifest.model_validate(raw)
                 self._skills[m.name] = m
                 mod_name, fn_name = m.entrypoint.split(":", 1)

@@ -9,6 +9,8 @@ import yaml
 from erica_agent.config import settings
 from erica_agent.models import EricaMode
 
+_SKILLS_SUGGEST_CONFIRM = frozenset({"network.wifi_toggle", "system.launch"})
+
 
 class PersonaState:
     def __init__(self) -> None:
@@ -52,6 +54,46 @@ class PersonaState:
                 f"Constraints:\n{cstr}\n"
                 f"Example response style:\n{ex}\n"
             )
+
+    def response_verbosity(self) -> str:
+        """minimal | normal — QuietMode prefers short summaries."""
+        with self._lock:
+            return "minimal" if self._mode == EricaMode.quiet else "normal"
+
+    def should_confirm_destructive(self, skill_id: str) -> bool:
+        """OperatorMode: flag high-impact skills per persona constraints."""
+        with self._lock:
+            if self._mode != EricaMode.operator:
+                return False
+        return skill_id in _SKILLS_SUGGEST_CONFIRM
+
+    def shape_plan_message(self, text: str) -> str:
+        if self.response_verbosity() != "minimal":
+            return text
+        if len(text) <= 280:
+            return text
+        return text[: 277] + "..."
+
+    def format_execute_summary(self, ok: bool, results: list[dict[str, Any]] | None) -> str:
+        """Persona-aware one-line or short summary for ExecuteResponse.message."""
+        results = results or []
+        if self.response_verbosity() == "minimal":
+            return "Done." if ok else "Failed."
+        lines: list[str] = []
+        confirmed = []
+        for r in results:
+            sk = r.get("skill", "")
+            if r.get("ok"):
+                lines.append(f"- {sk}: ok")
+            else:
+                lines.append(f"- {sk}: {r.get('error', 'error')}")
+            if sk and self.should_confirm_destructive(sk):
+                confirmed.append(sk)
+        head = "All steps completed." if ok else "Some steps failed."
+        body = "\n".join(lines) if lines else "(no steps)"
+        if confirmed:
+            head += f" Note: confirm destructive-style actions when unsure: {', '.join(confirmed)}."
+        return f"{head}\n{body}"
 
 
 persona_state = PersonaState()

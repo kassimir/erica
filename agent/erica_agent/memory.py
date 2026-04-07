@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from erica_agent.config import settings
+from erica_agent.embeddings import cosine_similarity, embed_text
 from erica_agent.models import EricaMode
 
 
@@ -65,7 +66,7 @@ class ShortTermMemory:
 
 
 class LongTermMemory:
-    """SQLite-backed metadata and embedding vectors (semantic retrieval hook)."""
+    """SQLite-backed metadata and embedding vectors with cosine retrieval."""
 
     def __init__(self, db_path: Path | None = None) -> None:
         self._path = db_path or (settings.data_path / "memory.sqlite3")
@@ -131,29 +132,84 @@ class LongTermMemory:
                 c.commit()
         return eid
 
+    def index_text_for_metadata(self, metadata_id: str, text: str) -> str:
+        """Store embedding row linked to metadata (typically utterance text)."""
+        return self.write_embedding(metadata_id, embed_text(text))
+
+    def write_metadata_and_index_text(
+        self,
+        source: str,
+        label: str,
+        payload: dict[str, Any],
+        text_to_embed: str,
+    ) -> str:
+        """Write metadata row and attach embedding for the given text."""
+        mid = self.write_metadata(source, label, payload)
+        self.index_text_for_metadata(mid, text_to_embed)
+        return mid
+
     def retrieve_relevant(
         self,
         query_embedding: list[float] | None,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        """Placeholder semantic retrieval: returns recent metadata rows if no embedding index."""
+        """Return top metadata rows by cosine similarity when query_embedding set; else recent rows."""
         with self._lock:
             with self._connect() as c:
-                rows = c.execute(
-                    "SELECT id, source, label, payload FROM metadata ORDER BY rowid DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-        out: list[dict[str, Any]] = []
+                if query_embedding:
+                    rows = c.execute(
+                        """
+                        SELECT m.id, m.source, m.label, m.payload, e.vector
+                        FROM metadata m
+                        INNER JOIN embeddings e ON e.metadata_id = m.id
+                        """
+                    ).fetchall()
+                else:
+                    rows = c.execute(
+                        """
+                        SELECT id, source, label, payload FROM metadata
+                        ORDER BY rowid DESC LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+
+        if not query_embedding:
+            out: list[dict[str, Any]] = []
+            for r in rows:
+                out.append(
+                    {
+                        "id": r["id"],
+                        "source": r["source"],
+                        "label": r["label"],
+                        "payload": json.loads(r["payload"] or "{}"),
+                        "score": None,
+                    }
+                )
+            return out
+
+        scored: list[tuple[float, dict[str, Any]]] = []
         for r in rows:
-            out.append(
-                {
-                    "id": r["id"],
-                    "source": r["source"],
-                    "label": r["label"],
-                    "payload": json.loads(r["payload"] or "{}"),
-                }
+            try:
+                vec = json.loads(r["vector"])
+                if not isinstance(vec, list):
+                    continue
+                score = cosine_similarity(query_embedding, [float(x) for x in vec])
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            scored.append(
+                (
+                    score,
+                    {
+                        "id": r["id"],
+                        "source": r["source"],
+                        "label": r["label"],
+                        "payload": json.loads(r["payload"] or "{}"),
+                        "score": score,
+                    },
+                )
             )
-        return out
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [item[1] for item in scored[:limit]]
 
 
 short_term = ShortTermMemory()

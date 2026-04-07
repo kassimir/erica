@@ -18,6 +18,8 @@ AI-mediated Windows shell: WinUI 3 **shell**, Python **FastAPI agent**, optional
 
 ## Quick start
 
+See **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for smoke tests, `ERICA_WINDOWS_CLI`, and optional extras.
+
 1. **Agent:** `cd agent` → create venv → `pip install -e .` → `py -3 -m uvicorn erica_agent.main:app --host 127.0.0.1 --port 8742`
 2. **Shell:** open `Erica.sln`, build **Erica.Shell**, run the executable.
 3. **Git:** run [`scripts/Initialize-GitRepo.ps1`](scripts/Initialize-GitRepo.ps1) or `git init` in this folder.

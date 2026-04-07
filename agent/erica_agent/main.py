@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -56,7 +57,11 @@ def _permissions_for_mode(mode: EricaMode) -> set[str]:
 
 def _execute_plan(plan, session_id: str | None) -> ExecuteResponse:
     if not plan or not plan.steps:
-        return ExecuteResponse(ok=True, results=[], message="No steps.")
+        return ExecuteResponse(
+            ok=True,
+            results=[],
+            message=persona_state.format_execute_summary(True, []),
+        )
     results: list[dict] = []
     mode = persona_state.mode
     perms = _permissions_for_mode(mode)
@@ -68,7 +73,12 @@ def _execute_plan(plan, session_id: str | None) -> ExecuteResponse:
         except Exception as e:
             log.exception("Skill failed")
             results.append({"skill": step.skill_id, "ok": False, "error": str(e)})
-    return ExecuteResponse(ok=all(r.get("ok") for r in results), results=results)
+    ok = all(r.get("ok") for r in results)
+    return ExecuteResponse(
+        ok=ok,
+        results=results,
+        message=persona_state.format_execute_summary(ok, results),
+    )
 
 
 @asynccontextmanager
@@ -85,6 +95,7 @@ async def lifespan(app: FastAPI):
             _execute_plan(p, None)
 
     workflow_engine.on_trigger(_on_wf)
+    asyncio.create_task(workflow_engine.run_app_trigger_loop())
     yield
     sched = getattr(workflow_engine, "_scheduler", None)
     if sched:
@@ -122,7 +133,7 @@ async def post_intent(body: IntentRequest, request: Request):
     wf_id = workflow_engine.match_command(body.text)
     if wf_id:
         info["workflow"] = wf_id
-    ctx = getattr(request.state, "context_text", "")
+    ctx = build_request_context(body.text)
     return IntentResponse(
         intent=info.get("intent", "unknown"),
         confidence=0.7 if mode_switch or wf_id else 0.2,
@@ -134,22 +145,30 @@ async def post_intent(body: IntentRequest, request: Request):
 @app.post("/plan", response_model=PlanResponse)
 async def post_plan(body: PlanRequest):
     short_term.add_command(body.text)
-    ctx = build_request_context(None)
+    ctx = build_request_context(body.text)
     p = plan_from_text(body.text)
     if not p:
         wf_id = workflow_engine.match_command(body.text)
         if wf_id:
             p = workflow_engine.to_plan(wf_id)
     if not p:
-        return PlanResponse(plan=None, message=f"No rule matched. Context:\n{ctx[:2000]}")
-    return PlanResponse(plan=p, message="ok")
+        return PlanResponse(
+            plan=None,
+            message=persona_state.shape_plan_message(f"No rule matched. Context:\n{ctx[:2000]}"),
+        )
+    return PlanResponse(plan=p, message=persona_state.shape_plan_message("ok"))
 
 
 @app.post("/execute", response_model=ExecuteResponse)
 async def post_execute(body: ExecuteRequest):
     if body.text:
         try:
-            long_term.write_metadata("session", "utterance", {"text": body.text})
+            long_term.write_metadata_and_index_text(
+                "session",
+                "utterance",
+                {"text": body.text},
+                body.text,
+            )
         except Exception:
             log.exception("Long-term write skipped")
 
@@ -168,6 +187,16 @@ async def post_execute_stream(body: ExecuteRequest):
     """Streams newline-delimited JSON chunks for the Quake console."""
 
     async def gen():
+        if body.text:
+            try:
+                long_term.write_metadata_and_index_text(
+                    "session",
+                    "utterance",
+                    {"text": body.text},
+                    body.text,
+                )
+            except Exception:
+                log.exception("Long-term write skipped")
         if body.plan:
             res = _execute_plan(body.plan, body.session_id)
         elif body.text:

@@ -28,16 +28,27 @@ def _cli_json(cmd: str, payload: dict) -> dict:
 
 def wifi_toggle(enable: bool) -> dict:
     data = _cli_json("wifi", {"enable": enable})
-    if data:
-        return data
+    if data and data.get("ok"):
+        return {**data, "enable": enable}
+
     arg = "enable" if enable else "disable"
     try:
-        subprocess.run(
-            ["netsh", "interface", "set", "interface", "Wi-Fi", "admin=" + arg],
+        r = subprocess.run(
+            ["netsh", "interface", "set", "interface", "Wi-Fi", f"admin={arg}"],
             capture_output=True,
+            text=True,
             timeout=30,
-            check=False,
         )
-        return {"ok": True, "enable": enable, "method": "netsh"}
+        ok = r.returncode == 0
+        err = (r.stderr or "").strip()
+        out = (r.stdout or "").strip()
+        return {
+            "ok": ok,
+            "enable": enable,
+            "method": "netsh_interface",
+            "exitCode": r.returncode,
+            "stderr": err[:800],
+            "stdout": out[:800],
+        }
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "enable": enable, "error": str(e), "method": "netsh_interface"}
