@@ -42,8 +42,27 @@ $env:ERICA_WINDOWS_CLI = "C:\path\to\Erica.Windows.Cli.exe"
 
 Retry skills that call `audio_volume`, `wifi`, `window_*`, `foreground_title`, etc.
 
+## MemPalace (long-term memory)
+
+Erica uses **MemPalace** as the primary long-term store with SQLite as a read-through cache (`erica_agent/memory_backend.py`). Install the optional extra:
+
+```powershell
+pip install -e ".[mempalace]"
+```
+
+Initialize a palace once (see [MemPalace](https://github.com/milla-jovovich/mempalace)), then point the agent at its Chroma persist directory if not using the default:
+
+| Variable | Default | Description |
+|----------|---------|--------------|
+| `ERICA_MEMPALACE_PALACE_PATH` | `%USERPROFILE%\.mempalace\palace` | ChromaDB persist path (`mempalace init` creates this layout) |
+| `ERICA_MEMPALACE_IDENTITY_PATH` | `%USERPROFILE%\.mempalace\identity.txt` | Layer-0 identity text injected into prompts |
+| `ERICA_MEMORY_BACKEND` | `local` | `local` = in-process MemPalace + SQLite cache; `http` reserved (stub) |
+
+Without MemPalace installed or with no palace directory, the agent still runs; memory falls back to the SQLite cache for search/recent rows.
+
 ## Optional dependencies
 
+- `pip install -e ".[mempalace]"` — MemPalace + Chroma for semantic memory and diaries
 - `pip install -e ".[windows]"` — `pycaw`/`comtypes` for volume without CLI
 - `pip install -e ".[voice]"` — SpeechRecognition for `/voice/stt` (WAV upload)
 

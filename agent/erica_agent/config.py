@@ -22,5 +22,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
 
+    # MemPalace (local Chroma palace). Run: mempalace init <dir>, then set path or use default.
+    mempalace_palace_path: Path | None = None
+    mempalace_identity_path: Path | None = None
+    memory_backend: str = "local"
+    mempalace_http_url: str | None = None
+
 
 settings = Settings()

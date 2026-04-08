@@ -1,4 +1,8 @@
-"""Short-term (in-process) and long-term (SQLite) memory for the Erica agent."""
+"""Short-term (in-process) memory and SQLite read-through cache for the Erica agent.
+
+Long-term semantic storage is MemPalace (see ``memory_backend``). ``LongTermMemory`` is only
+used as a local embedding cache and recent-row fallback when the palace is unavailable.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +70,7 @@ class ShortTermMemory:
 
 
 class LongTermMemory:
-    """SQLite-backed metadata and embedding vectors with cosine retrieval."""
+    """SQLite-backed cache: metadata + embedding vectors for read-through retrieval."""
 
     def __init__(self, db_path: Path | None = None) -> None:
         self._path = db_path or (settings.data_path / "memory.sqlite3")

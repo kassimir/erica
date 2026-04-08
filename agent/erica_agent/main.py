@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from erica_agent.context import build_request_context
-from erica_agent.memory import long_term, short_term
+from erica_agent.memory import short_term
+from erica_agent.memory_backend import get_memory_backend
 from erica_agent.models import (
     EricaMode,
     ExecuteRequest,
@@ -83,6 +84,21 @@ def _execute_plan(plan, session_id: str | None) -> ExecuteResponse:
         results=results,
         message=persona_state.format_execute_summary(ok, results),
     )
+
+
+def _log_execute_to_memory(body: ExecuteRequest, res: ExecuteResponse) -> None:
+    """Diary entry: user utterance (if any) + execute outcome (MemPalace + cache handled in write path)."""
+    try:
+        backend = get_memory_backend()
+        parts: list[str] = []
+        if body.text:
+            parts.append(f"User: {body.text}")
+        parts.append(f"ok={res.ok} {res.message}")
+        if res.results:
+            parts.append(f"results={json.dumps(res.results, default=str)[:4000]}")
+        backend.diary("\n".join(parts), wing=persona_state.mode.value)
+    except Exception:
+        log.exception("Diary logging failed")
 
 
 @asynccontextmanager
@@ -189,22 +205,27 @@ async def get_tools():
 async def post_execute(body: ExecuteRequest):
     if body.text:
         try:
-            long_term.write_metadata_and_index_text(
-                "session",
-                "utterance",
-                {"text": body.text},
+            get_memory_backend().write(
                 body.text,
+                metadata={"kind": "utterance"},
+                tags=["utterance"],
+                source="session",
+                label="utterance",
             )
         except Exception:
             log.exception("Long-term write skipped")
 
     if body.plan:
-        return _execute_plan(body.plan, body.session_id)
+        res = _execute_plan(body.plan, body.session_id)
+        _log_execute_to_memory(body, res)
+        return res
     if body.text:
         p = plan_from_text(body.text)
         if not p:
             return ExecuteResponse(ok=False, message="Could not plan from text.")
-        return _execute_plan(p, body.session_id)
+        res = _execute_plan(p, body.session_id)
+        _log_execute_to_memory(body, res)
+        return res
     return ExecuteResponse(ok=False, message="No plan or text provided.")
 
 
@@ -215,11 +236,12 @@ async def post_execute_stream(body: ExecuteRequest):
     async def gen():
         if body.text:
             try:
-                long_term.write_metadata_and_index_text(
-                    "session",
-                    "utterance",
-                    {"text": body.text},
+                get_memory_backend().write(
                     body.text,
+                    metadata={"kind": "utterance"},
+                    tags=["utterance"],
+                    source="session",
+                    label="utterance",
                 )
             except Exception:
                 log.exception("Long-term write skipped")
@@ -234,6 +256,7 @@ async def post_execute_stream(body: ExecuteRequest):
         else:
             yield json.dumps({"text": "No input.", "done": True}) + "\n"
             return
+        _log_execute_to_memory(body, res)
         yield json.dumps({"text": json.dumps(res.model_dump(), indent=2), "done": False}) + "\n"
         yield json.dumps({"text": "", "done": True}) + "\n"
 
