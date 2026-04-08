@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from erica_agent.context import build_request_context
+from erica_agent.erica_memory import get_erica_memory, init_erica_memory
 from erica_agent.memory import short_term
 from erica_agent.memory_backend import get_memory_backend
 from erica_agent.models import (
@@ -20,10 +21,15 @@ from erica_agent.models import (
     ExecuteResponse,
     IntentRequest,
     IntentResponse,
+    MemoryFactRequest,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    MemoryWakeUpResponse,
     Plan,
     PlanRequest,
     PlanResponse,
 )
+from erica_agent.palace_config import looks_like_preference_statement
 from erica_agent.persona import persona_state
 from erica_agent.llm_planner import plan_with_llm
 from erica_agent.planner import intent_from_text, plan_from_text
@@ -86,8 +92,8 @@ def _execute_plan(plan, session_id: str | None) -> ExecuteResponse:
     )
 
 
-def _log_execute_to_memory(body: ExecuteRequest, res: ExecuteResponse) -> None:
-    """Diary entry: user utterance (if any) + execute outcome (MemPalace + cache handled in write path)."""
+def _persist_execute_memory(body: ExecuteRequest, res: ExecuteResponse) -> None:
+    """MemPalace interaction drawer + diary + SQLite cache (utterance path already wrote via backend)."""
     try:
         backend = get_memory_backend()
         parts: list[str] = []
@@ -97,8 +103,24 @@ def _log_execute_to_memory(body: ExecuteRequest, res: ExecuteResponse) -> None:
         if res.results:
             parts.append(f"results={json.dumps(res.results, default=str)[:4000]}")
         backend.diary("\n".join(parts), wing=persona_state.mode.value)
+        skill_id = None
+        if res.results:
+            for r in reversed(res.results):
+                if r.get("skill"):
+                    skill_id = str(r["skill"])
+                    break
+        elif body.plan and body.plan.steps:
+            skill_id = body.plan.steps[-1].skill_id
+        status = "ok" if res.ok else "error"
+        get_erica_memory().save_interaction(
+            body.text,
+            res.message,
+            skill_id,
+            status,
+            res.results,
+        )
     except Exception:
-        log.exception("Diary logging failed")
+        log.exception("Persist execute memory failed")
 
 
 @asynccontextmanager
@@ -108,6 +130,8 @@ async def lifespan(app: FastAPI):
     log.info("Loaded %d skills", n)
     wf = workflow_engine.load_directory()
     log.info("Loaded %d workflows", wf)
+    mem = init_erica_memory()
+    app.state.memory = mem
 
     def _on_wf(wid: str, payload: dict):
         p = workflow_engine.to_plan(wid)
@@ -140,6 +164,11 @@ async def inject_context(request: Request, call_next):
 @app.post("/intent", response_model=IntentResponse)
 async def post_intent(body: IntentRequest, request: Request):
     short_term.add_command(body.text)
+    if looks_like_preference_statement(body.text):
+        try:
+            get_erica_memory().store_preference_fact(body.text)
+        except Exception:
+            log.exception("Preference capture failed")
     info = intent_from_text(body.text)
     mode_switch = plan_from_text(body.text)
     mode: EricaMode | None = None
@@ -201,6 +230,21 @@ async def get_tools():
     return {"tools": registry.get_tool_definitions()}
 
 
+@app.get("/memory/wake-up", response_model=MemoryWakeUpResponse)
+async def get_memory_wake_up():
+    return MemoryWakeUpResponse(wake_up=get_erica_memory().wake_up_context())
+
+
+@app.post("/memory/search", response_model=MemorySearchResponse)
+async def post_memory_search(body: MemorySearchRequest):
+    return MemorySearchResponse(results=get_erica_memory().recall(body.query, wing=body.wing, room=body.room))
+
+
+@app.post("/memory/fact")
+async def post_memory_fact(body: MemoryFactRequest):
+    return get_erica_memory().add_fact(body.subject, body.predicate, body.obj, valid_from=body.valid_from)
+
+
 @app.post("/execute", response_model=ExecuteResponse)
 async def post_execute(body: ExecuteRequest):
     if body.text:
@@ -217,14 +261,14 @@ async def post_execute(body: ExecuteRequest):
 
     if body.plan:
         res = _execute_plan(body.plan, body.session_id)
-        _log_execute_to_memory(body, res)
+        _persist_execute_memory(body, res)
         return res
     if body.text:
         p = plan_from_text(body.text)
         if not p:
             return ExecuteResponse(ok=False, message="Could not plan from text.")
         res = _execute_plan(p, body.session_id)
-        _log_execute_to_memory(body, res)
+        _persist_execute_memory(body, res)
         return res
     return ExecuteResponse(ok=False, message="No plan or text provided.")
 
@@ -256,7 +300,7 @@ async def post_execute_stream(body: ExecuteRequest):
         else:
             yield json.dumps({"text": "No input.", "done": True}) + "\n"
             return
-        _log_execute_to_memory(body, res)
+        _persist_execute_memory(body, res)
         yield json.dumps({"text": json.dumps(res.model_dump(), indent=2), "done": False}) + "\n"
         yield json.dumps({"text": "", "done": True}) + "\n"
 

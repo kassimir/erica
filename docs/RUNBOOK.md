@@ -44,25 +44,45 @@ Retry skills that call `audio_volume`, `wifi`, `window_*`, `foreground_title`, e
 
 ## MemPalace (long-term memory)
 
-Erica uses **MemPalace** as the primary long-term store with SQLite as a read-through cache (`erica_agent/memory_backend.py`). Install the optional extra:
+Erica uses **MemPalace** (`mempalace>=3`) as the primary palace: drawers, agent diary, `MemoryStack` wake-up (L0+L1), and a dedicated knowledge graph DB. SQLite under `data/` remains a read-through cache. Palace layout and skill routing are defined in `erica_agent/palace_config.py`; the facade is `erica_agent/erica_memory.py`.
+
+**One-time palace init** (creates Chroma persist dir):
 
 ```powershell
-pip install -e ".[mempalace]"
+mempalace init $env:USERPROFILE\.mempalace\erica_palace
 ```
 
-Initialize a palace once (see [MemPalace](https://github.com/milla-jovovich/mempalace)), then point the agent at its Chroma persist directory if not using the default:
+On first agent startup, `EricaMemory.initialize()` seeds `identity.txt` and `wing_config.json` from [`memory/identity.txt`](../memory/identity.txt) and [`memory/wing_config_seed.json`](../memory/wing_config_seed.json) when missing.
 
 | Variable | Default | Description |
 |----------|---------|--------------|
-| `ERICA_MEMPALACE_PALACE_PATH` | `%USERPROFILE%\.mempalace\palace` | ChromaDB persist path (`mempalace init` creates this layout) |
-| `ERICA_MEMPALACE_IDENTITY_PATH` | `%USERPROFILE%\.mempalace\identity.txt` | Layer-0 identity text injected into prompts |
-| `ERICA_MEMORY_BACKEND` | `local` | `local` = in-process MemPalace + SQLite cache; `http` reserved (stub) |
+| `ERICA_MEMPALACE_PALACE_PATH` | `%USERPROFILE%\.mempalace\erica_palace` | ChromaDB persist path |
+| `ERICA_MEMPALACE_IDENTITY_PATH` | `<palace>\identity.txt` | L0 identity file for `MemoryStack` |
+| `ERICA_MEMORY_BACKEND` | `local` | `local` = Erica palace + SQLite cache; `http` = SQLite-only placeholder |
 
-Without MemPalace installed or with no palace directory, the agent still runs; memory falls back to the SQLite cache for search/recent rows.
+**Agent endpoints**
+
+- `GET /memory/wake-up` — JSON `{ "wake_up": "<L0+L1 text>" }` for prompts; the WinUI shell calls this at startup and passes the text as the `context` field on `POST /plan`.
+- `POST /memory/search` — `{ "query", "wing"?, "room"? }` → `{ "results": [strings] }`.
+- `POST /memory/fact` — `{ "subject", "predicate", "object", "valid_from"? }` → KG triple in `~/.mempalace/erica_knowledge_graph.sqlite3`.
+
+**Inspect the palace** (with MemPalace CLI on PATH):
+
+```powershell
+mempalace status --palace $env:USERPROFILE\.mempalace\erica_palace
+```
+
+**MCP server for Cursor** — activate the agent venv, then:
+
+```powershell
+.\scripts\Start-MemPalaceMCP.ps1
+```
+
+Or register: `claude mcp add mempalace -- pwsh -File C:\path\to\erica\scripts\Start-MemPalaceMCP.ps1`
 
 ## Optional dependencies
 
-- `pip install -e ".[mempalace]"` — MemPalace + Chroma for semantic memory and diaries
+- Core agent already depends on `mempalace`; optional `[mempalace]` extra is redundant but harmless
 - `pip install -e ".[windows]"` — `pycaw`/`comtypes` for volume without CLI
 - `pip install -e ".[voice]"` — SpeechRecognition for `/voice/stt` (WAV upload)
 

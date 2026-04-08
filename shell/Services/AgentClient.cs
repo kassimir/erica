@@ -77,6 +77,28 @@ public sealed class AgentClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>GET /memory/wake-up — L0+L1 MemPalace context for the shell.</summary>
+    public async Task<string?> GetMemoryWakeUpAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var url = $"{BaseUrl}/memory/wake-up";
+            _log.Information($"GET {url}");
+            var res = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            res.EnsureSuccessStatusCode();
+            var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("wake_up", out var w))
+                return w.GetString();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"GET /memory/wake-up failed: {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>GET /health — agent reachability and active persona mode.</summary>
     public async Task<AgentHealthResult?> GetHealthAsync(CancellationToken cancellationToken = default)
     {

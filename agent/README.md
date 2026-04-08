@@ -28,12 +28,14 @@ Default base URL: `http://127.0.0.1:8742`
 
 | Module | Role |
 |--------|------|
-| `main.py` | FastAPI app: `/intent`, `/plan`, `/execute`, `/execute/stream`, `/health`, voice stubs |
+| `main.py` | FastAPI app: `/intent`, `/plan`, `/execute`, `/memory/*`, `/health`, voice stubs |
 | `planner.py` | Rule-based `plan_from_text` / `intent_from_text` |
 | `registry.py` | Skill manifests (YAML), validation, `registry.call` |
 | `memory.py` | `short_term` + SQLite read-through cache (`long_term`) |
 | `memory_backend.py` | `MemoryBackend` protocol; MemPalace local + HTTP stub |
-| `mempalace_client.py` | In-process MemPalace (search, drawers, diary, identity file) |
+| `mempalace_client.py` | Low-level Chroma drawers + `search_memories` |
+| `erica_memory.py` | `EricaMemory`: palace init, `save_interaction`, KG, wake-up stack |
+| `palace_config.py` | Wings/rooms/halls, `infer_room(skill_id)`, preference heuristics |
 | `persona.py` | Loads `config/persona.yaml`, active mode |
 | `workflows.py` | YAML workflows under `config/workflows/` |
 | `context.py` | Request context from persona + memory |
@@ -49,6 +51,6 @@ When testing with `fastapi.testclient.TestClient`, use `with TestClient(app) as 
 | `ERICA_CONFIG_PATH` | `../config` | Persona + workflows |
 | `ERICA_DATA_PATH` | `../data` | SQLite cache and runtime data |
 | `ERICA_WINDOWS_CLI` | _(empty)_ | Optional path to `Erica.Windows.Cli.exe` for Win32 helpers |
-| `ERICA_MEMPALACE_PALACE_PATH` | `%USERPROFILE%\.mempalace\palace` | MemPalace Chroma persist directory |
-| `ERICA_MEMPALACE_IDENTITY_PATH` | `%USERPROFILE%\.mempalace\identity.txt` | Identity core (L0) for prompts |
+| `ERICA_MEMPALACE_PALACE_PATH` | `%USERPROFILE%\.mempalace\erica_palace` | Erica Chroma palace directory |
+| `ERICA_MEMPALACE_IDENTITY_PATH` | `<palace>\\identity.txt` | L0 identity for `MemoryStack` |
 | `ERICA_MEMORY_BACKEND` | `local` | `local` or `http` (HTTP not implemented yet) |

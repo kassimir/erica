@@ -1,0 +1,17 @@
+{
+  "default_wing": "wing_tasks",
+  "wings": {
+    "wing_user": {
+      "type": "person",
+      "keywords": ["user", "human", "preference", "i prefer", "i like"]
+    },
+    "wing_tasks": {
+      "type": "project",
+      "keywords": ["task", "erica", "shell", "execute", "plan", "skill"]
+    },
+    "wing_computer": {
+      "type": "project",
+      "keywords": ["pc", "windows", "machine", "network", "hardware", "app"]
+    }
+  }
+}

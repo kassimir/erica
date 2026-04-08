@@ -1,3 +1,4 @@
+using Erica.Shell;
 using Erica.Shell.Logging;
 
 namespace Erica.Shell.Services;
@@ -67,10 +68,14 @@ public sealed class CommandRouter
             return new RoutedCommandResult { Target = CommandTarget.CopilotChat, Output = reply };
         }
 
+        var planContext = string.IsNullOrWhiteSpace(ShellAppHost.MemoryWakeContext)
+            ? null
+            : ShellAppHost.MemoryWakeContext;
+
         if (streamToAgent)
         {
             _log.Information("Route: agent stream (POST /plan then /execute/stream)");
-            var planRes = await _agent.PostPlanAsync(t, null, cancellationToken);
+            var planRes = await _agent.PostPlanAsync(t, planContext, cancellationToken);
             if (planRes?.Plan is { Steps.Count: > 0 })
             {
                 if (streamChunk != null)
@@ -91,7 +96,7 @@ public sealed class CommandRouter
         }
 
         _log.Information("Route: agent execute (POST /plan then /execute)");
-        var planExec = await _agent.PostPlanAsync(t, null, cancellationToken);
+        var planExec = await _agent.PostPlanAsync(t, planContext, cancellationToken);
         if (planExec?.Plan is { Steps.Count: > 0 })
         {
             var raw = await _agent.PostExecuteWithPlanAsync(planExec.Plan, cancellationToken);

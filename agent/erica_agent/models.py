@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EricaMode(str, Enum):
@@ -72,3 +72,26 @@ class ExecuteResponse(BaseModel):
 class StreamChunk(BaseModel):
     text: str = ""
     done: bool = False
+
+
+class MemorySearchRequest(BaseModel):
+    query: str
+    wing: str | None = None
+    room: str | None = None
+
+
+class MemorySearchResponse(BaseModel):
+    results: list[str] = Field(default_factory=list)
+
+
+class MemoryFactRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    subject: str
+    predicate: str
+    obj: str = Field(alias="object")
+    valid_from: str | None = None
+
+
+class MemoryWakeUpResponse(BaseModel):
+    wake_up: str = ""
