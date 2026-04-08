@@ -17,5 +17,10 @@ class Settings(BaseSettings):
     agent_host: str = "127.0.0.1"
     agent_port: int = 8742
 
+    # LLM planning (OpenAI-compatible Chat Completions). Set LLM_API_KEY to enable.
+    llm_api_key: str | None = None
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-4o-mini"
+
 
 settings = Settings()

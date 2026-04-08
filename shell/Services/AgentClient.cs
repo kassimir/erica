@@ -24,6 +24,59 @@ public sealed class AgentClient
 
     public string BaseUrl => _settings.AgentBaseUrl.TrimEnd('/');
 
+    private static readonly JsonSerializerOptions JsonSnake = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>POST /plan — rule-based + optional LLM when agent has <c>ERICA_LLM_API_KEY</c>.</summary>
+    public async Task<PlanResponseDto?> PostPlanAsync(
+        string text,
+        string? context,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{BaseUrl}/plan";
+        _log.Information($"POST {url} (LLM + rules)");
+        return await WithRetryAsync(
+            async () =>
+            {
+                var res = await _http.PostAsJsonAsync(
+                        url,
+                        new
+                        {
+                            text,
+                            context,
+                            use_llm = true,
+                            include_request_context = true,
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                res.EnsureSuccessStatusCode();
+                var json = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                return JsonSerializer.Deserialize<PlanResponseDto>(json, JsonSnake)
+                    ?? throw new InvalidOperationException("Empty /plan response");
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>POST /execute with a plan from <see cref="PostPlanAsync"/>.</summary>
+    public async Task<string> PostExecuteWithPlanAsync(PlanDto plan, CancellationToken cancellationToken = default)
+    {
+        var url = $"{BaseUrl}/execute";
+        _log.Information($"POST {url} (with plan, {plan.Steps.Count} steps)");
+        return await WithRetryAsync(
+            async () =>
+            {
+                var json = JsonSerializer.Serialize(new { plan }, JsonSnake);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var res = await _http.PostAsync(url, content, cancellationToken).ConfigureAwait(false);
+                res.EnsureSuccessStatusCode();
+                return await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>GET /health — agent reachability and active persona mode.</summary>
     public async Task<AgentHealthResult?> GetHealthAsync(CancellationToken cancellationToken = default)
     {
@@ -94,7 +147,6 @@ public sealed class AgentClient
     {
         var url = $"{BaseUrl}/execute/stream";
         _log.Information($"POST {url} (stream, incremental)");
-
         await WithRetryAsync(
             async () =>
             {
@@ -102,34 +154,63 @@ public sealed class AgentClient
                 {
                     Content = JsonContent.Create(new { text }),
                 };
-                using var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                    .ConfigureAwait(false);
-                res.EnsureSuccessStatusCode();
-                await using var stream = await res.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                using var reader = new StreamReader(stream);
-                while (!reader.EndOfStream)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
-                    try
-                    {
-                        var chunk = JsonSerializer.Deserialize<StreamChunkDto>(
-                            line,
-                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        if (chunk?.Text is { Length: > 0 })
-                            onChunk.Report(chunk.Text);
-                        else if (!string.IsNullOrWhiteSpace(line))
-                            onChunk.Report(line);
-                    }
-                    catch
-                    {
-                        onChunk.Report(line);
-                    }
-                }
+                await ReadNdjsonStreamAsync(req, onChunk, cancellationToken).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Stream <c>/execute/stream</c> with a structured plan (after <see cref="PostPlanAsync"/>).</summary>
+    public async Task ExecutePlanStreamAsync(
+        PlanDto plan,
+        IProgress<string> onChunk,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{BaseUrl}/execute/stream";
+        _log.Information($"POST {url} (stream, plan, {plan.Steps.Count} steps)");
+        await WithRetryAsync(
+            async () =>
+            {
+                var json = JsonSerializer.Serialize(new { plan }, JsonSnake);
+                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                };
+                await ReadNdjsonStreamAsync(req, onChunk, cancellationToken).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ReadNdjsonStreamAsync(
+        HttpRequestMessage req,
+        IProgress<string> onChunk,
+        CancellationToken cancellationToken)
+    {
+        using var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        res.EnsureSuccessStatusCode();
+        await using var stream = await res.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream);
+        while (!reader.EndOfStream)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            try
+            {
+                var chunk = JsonSerializer.Deserialize<StreamChunkDto>(
+                    line,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (chunk?.Text is { Length: > 0 })
+                    onChunk.Report(chunk.Text);
+                else if (!string.IsNullOrWhiteSpace(line))
+                    onChunk.Report(line);
+            }
+            catch
+            {
+                onChunk.Report(line);
+            }
+        }
     }
 
     private async Task<T> WithRetryAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)

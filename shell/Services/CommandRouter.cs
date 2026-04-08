@@ -69,19 +69,36 @@ public sealed class CommandRouter
 
         if (streamToAgent)
         {
-            _log.Information("Route: agent stream");
-            if (streamChunk != null)
+            _log.Information("Route: agent stream (POST /plan then /execute/stream)");
+            var planRes = await _agent.PostPlanAsync(t, null, cancellationToken);
+            if (planRes?.Plan is { Steps.Count: > 0 })
             {
-                await _agent.ExecuteStreamAsync(t, streamChunk, cancellationToken);
+                if (streamChunk != null)
+                    await _agent.ExecutePlanStreamAsync(planRes.Plan, streamChunk, cancellationToken);
+                else
+                    await _agent.ExecutePlanStreamAsync(
+                        planRes.Plan,
+                        new Progress<string>(_ => { }),
+                        cancellationToken);
                 return new RoutedCommandResult { Target = CommandTarget.AgentStream, Output = "" };
             }
 
-            var body = await _agent.ExecuteStreamAsync(t, cancellationToken);
-            return new RoutedCommandResult { Target = CommandTarget.AgentStream, Output = body };
+            if (streamChunk != null)
+                await _agent.ExecuteStreamAsync(t, streamChunk, cancellationToken);
+            else
+                _ = await _agent.ExecuteStreamAsync(t, cancellationToken);
+            return new RoutedCommandResult { Target = CommandTarget.AgentStream, Output = "" };
         }
 
-        _log.Information("Route: agent execute");
-        var raw = await _agent.ExecuteAsync(t, cancellationToken);
-        return new RoutedCommandResult { Target = CommandTarget.AgentExecute, Output = raw };
+        _log.Information("Route: agent execute (POST /plan then /execute)");
+        var planExec = await _agent.PostPlanAsync(t, null, cancellationToken);
+        if (planExec?.Plan is { Steps.Count: > 0 })
+        {
+            var raw = await _agent.PostExecuteWithPlanAsync(planExec.Plan, cancellationToken);
+            return new RoutedCommandResult { Target = CommandTarget.AgentExecute, Output = raw };
+        }
+
+        var fallback = await _agent.ExecuteAsync(t, cancellationToken);
+        return new RoutedCommandResult { Target = CommandTarget.AgentExecute, Output = fallback };
     }
 }

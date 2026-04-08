@@ -38,6 +38,18 @@ class IntentResponse(BaseModel):
 class PlanRequest(BaseModel):
     text: str
     session_id: str | None = None
+    context: str | None = Field(
+        default=None,
+        description="Optional hint (e.g. active window title, foreground app).",
+    )
+    use_llm: bool = Field(
+        default=True,
+        description="When True, try LLM planner if ERICA_LLM_API_KEY is set, then rule-based fallback.",
+    )
+    include_request_context: bool = Field(
+        default=True,
+        description="Merge persona + memory context block into the LLM prompt.",
+    )
 
 
 class PlanResponse(BaseModel):

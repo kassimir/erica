@@ -19,10 +19,12 @@ from erica_agent.models import (
     ExecuteResponse,
     IntentRequest,
     IntentResponse,
+    Plan,
     PlanRequest,
     PlanResponse,
 )
 from erica_agent.persona import persona_state
+from erica_agent.llm_planner import plan_with_llm
 from erica_agent.planner import intent_from_text, plan_from_text
 from erica_agent.registry import registry
 from erica_agent.workflows import engine as workflow_engine
@@ -66,8 +68,10 @@ def _execute_plan(plan, session_id: str | None) -> ExecuteResponse:
     mode = persona_state.mode
     perms = _permissions_for_mode(mode)
     for step in plan.steps:
+        log.info("Execute step skill_id=%s args=%s", step.skill_id, step.arguments)
         try:
             out = registry.call(step.skill_id, step.arguments, perms)
+            log.info("Execute step ok skill_id=%s result_type=%s", step.skill_id, type(out).__name__)
             results.append({"skill": step.skill_id, "ok": True, "result": out})
             short_term.add_command(f"exec:{step.skill_id}", {"args": step.arguments})
         except Exception as e:
@@ -142,11 +146,27 @@ async def post_intent(body: IntentRequest, request: Request):
     )
 
 
+def _plan_extra_context(body: PlanRequest) -> str | None:
+    parts: list[str] = []
+    if body.context:
+        parts.append(body.context.strip())
+    if body.include_request_context:
+        ctx = build_request_context(body.text)
+        if ctx:
+            parts.append(ctx[:4000])
+    return "\n\n".join(parts) if parts else None
+
+
 @app.post("/plan", response_model=PlanResponse)
 async def post_plan(body: PlanRequest):
     short_term.add_command(body.text)
     ctx = build_request_context(body.text)
-    p = plan_from_text(body.text)
+    p: Plan | None = None
+    if body.use_llm:
+        extra = _plan_extra_context(body)
+        p = await plan_with_llm(body.text, registry, extra_context=extra)
+    if p is None or not p.steps:
+        p = plan_from_text(body.text)
     if not p:
         wf_id = workflow_engine.match_command(body.text)
         if wf_id:
@@ -154,9 +174,15 @@ async def post_plan(body: PlanRequest):
     if not p:
         return PlanResponse(
             plan=None,
-            message=persona_state.shape_plan_message(f"No rule matched. Context:\n{ctx[:2000]}"),
+            message=persona_state.shape_plan_message(f"No rule or LLM plan matched. Context:\n{ctx[:2000]}"),
         )
     return PlanResponse(plan=p, message=persona_state.shape_plan_message("ok"))
+
+
+@app.get("/tools")
+async def get_tools():
+    """Registered skills in LLM-friendly form (for debugging and external planners)."""
+    return {"tools": registry.get_tool_definitions()}
 
 
 @app.post("/execute", response_model=ExecuteResponse)

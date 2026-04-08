@@ -89,6 +89,37 @@ class SkillRegistry:
     def get(self, name: str) -> SkillManifest | None:
         return self._skills.get(name)
 
+    def skill_ids(self) -> frozenset[str]:
+        return frozenset(self._skills.keys())
+
+    def get_tool_definitions(self) -> list[dict[str, Any]]:
+        """Return registered skills in an LLM-friendly structure (name, description, parameters, permissions)."""
+        out: list[dict[str, Any]] = []
+        for name in sorted(self._skills.keys()):
+            m = self._skills[name]
+            props: dict[str, Any] = {}
+            required: list[str] = []
+            for p in m.parameters:
+                json_type = p.type if p.type in ("string", "number", "integer", "boolean") else "string"
+                props[p.name] = {"type": json_type, "description": p.description or p.name}
+                if p.required:
+                    required.append(p.name)
+            param_schema: dict[str, Any] = {
+                "type": "object",
+                "properties": props,
+            }
+            if required:
+                param_schema["required"] = required
+            out.append(
+                {
+                    "skill_id": name,
+                    "description": m.description or f"Skill {name}",
+                    "parameters_json_schema": param_schema,
+                    "required_permissions": m.permissions,
+                }
+            )
+        return out
+
     def call(self, name: str, args: dict[str, Any], permissions_ok: set[str]) -> Any:
         m = self._skills.get(name)
         if not m:
